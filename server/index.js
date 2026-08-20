@@ -1,12 +1,33 @@
+// ⚠️ CATCH UNHANDLED ERRORS AT THE VERY START
+process.on('uncaughtException', (err) => {
+    console.error('💥 UNCAUGHT EXCEPTION:', err.message);
+    console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 UNHANDLED REJECTION:', reason);
+});
+
+console.log('🚀 Starting application...');
+
 const express = require('express');
 const cors = require('cors');
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+
+console.log('✅ Express loaded');
+
+try {
+    const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+    console.log('✅ Baileys loaded');
+} catch (err) {
+    console.error('❌ Failed to load Baileys:', err.message);
+    process.exit(1);
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-console.log('📦 Dependencies loaded successfully');
+console.log('✅ Middleware set up');
 
 let sock;
 
@@ -14,6 +35,7 @@ let sock;
 async function connectToWhatsApp() {
     try {
         console.log('🔄 Connecting to WhatsApp...');
+        const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
         const { state, saveCreds } = await useMultiFileAuthState('auth_info');
         sock = makeWASocket({
             auth: state,
@@ -33,37 +55,27 @@ async function connectToWhatsApp() {
             }
         });
 
-        console.log('✅ Connection handler set up');
+        console.log('✅ WhatsApp connection handler set up');
     } catch (error) {
         console.error('❌ Failed to connect to WhatsApp:', error.message);
         console.error(error.stack);
-        // Don't crash the server – keep it running
     }
 }
 
-// ─── Start the server FIRST, then connect ──────────────────────────
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    // Connect to WhatsApp after server is running
-    connectToWhatsApp();
-});
-
 // ─── API: React to a channel message ──────────────────────────────
 app.post('/react', async (req, res) => {
+    console.log('📨 Received /react request');
     const { link, emoji = '❤️' } = req.body;
 
     if (!link) {
         return res.status(400).json({ error: 'Link is required' });
     }
 
-    // Check if WhatsApp is connected
     if (!sock) {
-        return res.status(503).json({ error: 'WhatsApp not connected yet. Try again in a moment.' });
+        return res.status(503).json({ error: 'WhatsApp not connected yet. Try again later.' });
     }
 
     try {
-        // Parse the link
         const url = new URL(link);
         const pathParts = url.pathname.split('/').filter(Boolean);
 
@@ -83,7 +95,7 @@ app.post('/react', async (req, res) => {
         }
 
         if (!channelId || !messageId) {
-            return res.status(400).json({ error: 'Could not extract channel and message IDs from the link' });
+            return res.status(400).json({ error: 'Could not extract channel and message IDs' });
         }
 
         console.log(`📨 Reacting to ${messageId} in ${channelId} with ${emoji}`);
@@ -94,15 +106,10 @@ app.post('/react', async (req, res) => {
             reaction: emoji
         });
 
-        res.json({
-            success: true,
-            emoji: emoji,
-            channelId,
-            messageId
-        });
+        res.json({ success: true, emoji, channelId, messageId });
 
     } catch (error) {
-        console.error('❌ Error sending reaction:', error);
+        console.error('❌ Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -112,4 +119,21 @@ app.get('/', (req, res) => {
     res.send('WhatsApp Reaction Bot is running!');
 });
 
-console.log('✅ Server code loaded successfully');
+console.log('✅ Routes set up');
+
+// ─── Start server ──────────────────────────────────────────────────
+const PORT = process.env.PORT || 5000;
+console.log(`📡 Attempting to start server on port ${PORT}...`);
+
+try {
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        connectToWhatsApp();
+    });
+} catch (err) {
+    console.error('❌ Failed to start server:', err.message);
+    console.error(err.stack);
+    process.exit(1);
+}
+
+console.log('✅ All code loaded - waiting for server to start...');
